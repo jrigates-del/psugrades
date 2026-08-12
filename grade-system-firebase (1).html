@@ -1,0 +1,1062 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PSU-Bayambang | Grade Tracking System</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/3.4.3/tailwind.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,500;0,600;0,700;1,500&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --green-950:#0b2e22;
+    --green-900:#0f3d2e;
+    --green-800:#154a37;
+    --green-700:#1b5e3a;
+    --green-600:#2f7a4f;
+    --green-100:#e3ede6;
+    --gold-600:#a9821e;
+    --gold-500:#c9a227;
+    --gold-400:#dab94a;
+    --gold-100:#f7edc9;
+    --cream:#f7f5ef;
+    --paper:#ffffff;
+    --ink:#1a2420;
+    --ink-soft:#4d5a53;
+    --line:#e1ddd0;
+  }
+  *{box-sizing:border-box;}
+  body{background:var(--cream); font-family:'Inter',sans-serif; color:var(--ink); margin:0;}
+  .font-display{font-family:'Lora',serif;}
+  .font-mono{font-family:'JetBrains Mono',monospace;}
+  .brand-header{background:linear-gradient(135deg,var(--green-900),var(--green-700)); border-bottom:3px solid var(--gold-500);}
+  .logo-badge{
+    width:52px;height:52px;border-radius:9999px;
+    background:radial-gradient(circle at 30% 25%, var(--green-600), var(--green-900));
+    border:2px solid var(--gold-400);
+    display:flex;align-items:center;justify-content:center;
+    color:var(--gold-400); font-family:'Lora',serif; font-weight:700; font-size:15px; letter-spacing:0.5px;
+    flex-shrink:0;
+  }
+  .btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:9px 16px;border-radius:8px;font-weight:600;font-size:14px;cursor:pointer;transition:all .15s ease;border:1px solid transparent;}
+  .btn-primary{background:var(--green-700);color:#fff;}
+  .btn-primary:hover{background:var(--green-800);}
+  .btn-gold{background:var(--gold-500);color:var(--green-950);}
+  .btn-gold:hover{background:var(--gold-600);}
+  .btn-ghost{background:transparent;color:var(--ink-soft);border:1px solid var(--line);}
+  .btn-ghost:hover{background:#f0ede4;}
+  .btn-danger{background:#fff;color:#a3312a;border:1px solid #e3b3ae;}
+  .btn-danger:hover{background:#fdf2f1;}
+  .btn-sm{padding:5px 10px;font-size:12.5px;border-radius:6px;}
+  .card{background:var(--paper);border:1px solid var(--line);border-radius:14px;}
+  .tab-btn{padding:10px 16px;font-size:13.5px;font-weight:600;color:var(--ink-soft);border-bottom:2px solid transparent;cursor:pointer;white-space:nowrap;}
+  .tab-btn.active{color:var(--green-800);border-bottom:2px solid var(--gold-500);}
+  input[type=text],input[type=number],input[type=password],input[type=date],select{
+    border:1px solid var(--line); border-radius:8px; padding:7px 10px; font-size:13.5px; background:#fff; width:100%;
+  }
+  input:focus,select:focus{outline:2px solid var(--green-600); outline-offset:1px;}
+  table.gradebook{border-collapse:collapse;width:100%;font-size:13px;}
+  table.gradebook th, table.gradebook td{border:1px solid var(--line);padding:6px 8px;text-align:center;}
+  table.gradebook th{background:var(--green-100);color:var(--green-900);font-weight:600;font-size:12px;}
+  table.gradebook td.name-cell{text-align:left;font-weight:600;background:#fbfaf6;}
+  .score-input{width:60px;text-align:center;padding:4px;}
+  .pill{display:inline-block;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:700;letter-spacing:.02em;}
+  .pill-green{background:var(--green-100);color:var(--green-800);}
+  .pill-gold{background:var(--gold-100);color:var(--gold-600);}
+  ::-webkit-scrollbar{height:8px;width:8px;}
+  ::-webkit-scrollbar-thumb{background:#cfc9b8;border-radius:8px;}
+  .toast{position:fixed;bottom:20px;right:20px;background:var(--green-900);color:#fff;padding:12px 18px;border-radius:10px;font-size:13.5px;box-shadow:0 8px 24px rgba(0,0,0,.2);z-index:50;}
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<script>
+/* ============================= DATA LAYER ============================= */
+const LEAF_CATS = [
+  {key:'exam', label:'Exam', weight:40, group:null},
+  {key:'formative', label:'Quizzes/Attendance-based Submissions (Formative)', weight:20, group:'Class Standing'},
+  {key:'summative', label:'Unit/Chapter Test (Summative)', weight:10, group:'Class Standing'},
+  {key:'performance', label:'Performance-based Assessments', weight:30, group:null}
+];
+function defaultRubric(){ return LEAF_CATS.map(c=>({key:c.key,label:c.label,weight:c.weight,group:c.group})); }
+
+let DB = { accounts: [], sections: [], subjects: [], items: [], scores: [] };
+let session = null; // {role:'teacher'|'student', id, name, sectionId}
+let ui = { teacherTab:'sections', selSection:null, selSubject:null, selPeriod:'midterm', studentSelSubject:null, studentSelPeriod:'midterm', showAccount:false };
+
+/* ---- FIREBASE SETUP ----
+   1. Create a free project at https://console.firebase.google.com
+   2. Enable Authentication > Sign-in method > Anonymous
+   3. Enable Firestore Database (production mode, any region)
+   4. Firestore > Rules, paste:
+        rules_version = '2';
+        service cloud.firestore {
+          match /databases/{database}/documents {
+            match /{document=**} {
+              allow read, write: if request.auth != null;
+            }
+          }
+        }
+   5. Project settings > General > Your apps > Web app > copy the config below.
+--------------------------------------------------------------- */
+const firebaseConfig = {
+  apiKey: "AIzaSyCHwjVCZfpl4Qg3XhT5lND4tvgHJtIh_CU",
+  authDomain: "psugrade.firebaseapp.com",
+  projectId: "psugrade",
+  storageBucket: "psugrade.firebasestorage.app",
+  messagingSenderId: "975491878813",
+  appId: "1:975491878813:web:57fa5421219c3c28dca974"
+};
+let firebaseReady = false;
+let db = null;
+const DOC_REF_PATH = ['gradeSystem','mainData'];
+
+async function initFirebase(){
+  if(firebaseConfig.apiKey.startsWith('PASTE_')){
+    document.getElementById('app').innerHTML = `
+      <div class="min-h-screen flex items-center justify-center px-6 text-center">
+        <div class="max-w-md">
+          <h1 class="font-display text-[20px] mb-3" style="color:var(--green-900)">Firebase not connected yet</h1>
+          <p class="text-[13.5px]" style="color:var(--ink-soft)">Open this file's source and replace the <span class="font-mono">firebaseConfig</span> placeholder near the top of the script with your own project's config from the Firebase console, then reload.</p>
+        </div>
+      </div>`;
+    throw new Error('Firebase config not set');
+  }
+  firebase.initializeApp(firebaseConfig);
+  await firebase.auth().signInAnonymously();
+  db = firebase.firestore();
+  firebaseReady = true;
+}
+
+function docRef(){ return db.collection(DOC_REF_PATH[0]).doc(DOC_REF_PATH[1]); }
+
+function subscribeDB(){
+  docRef().onSnapshot(async (snap)=>{
+    if(snap.exists){
+      DB = snap.data().payload ? JSON.parse(snap.data().payload) : DB;
+    } else {
+      seedIfEmpty(); // creates the doc for the first time
+      return;
+    }
+    render();
+  }, (err)=>{
+    console.error('Firestore listen error', err);
+    toast('Live sync error — check your internet connection');
+  });
+}
+
+async function saveDB(){
+  try{ await docRef().set({payload: JSON.stringify(DB), updatedAt: Date.now()}); }
+  catch(e){ console.error('Firestore save failed', e); toast('Save failed — check your internet connection'); }
+}
+function uid(prefix){ return prefix+'_'+Math.random().toString(36).slice(2,9); }
+
+function seedIfEmpty(){
+  let changed = false;
+  if(DB.accounts.length===0){
+    DB.accounts.push({id:uid('acc'), role:'teacher', idNumber:'teacher', password:'admin123', name:'Instructor Account'});
+    changed = true;
+  }
+  if(DB.sections.length===0){
+    const sec = {id:uid('sec'), name:'BSIT 2A'};
+    DB.sections.push(sec);
+    const subj = {id:uid('sub'), name:'Computation', sectionId:sec.id, rubric:defaultRubric()};
+    DB.subjects.push(subj);
+    const demoStudents = [
+      {idNumber:'2026-0001', name:'Dela Cruz, Juan'},
+      {idNumber:'2026-0002', name:'Santos, Maria'},
+      {idNumber:'2026-0003', name:'Reyes, Mark'}
+    ];
+    demoStudents.forEach(s=>{
+      DB.accounts.push({id:uid('acc'), role:'student', idNumber:s.idNumber, password:s.idNumber, name:s.name, sectionId:sec.id});
+    });
+    const items = [
+      {subjectId:subj.id, period:'midterm', category:'exam', name:'Midterm Exam', maxScore:50, date:'2026-08-01'},
+      {subjectId:subj.id, period:'midterm', category:'formative', name:'Quiz 1', maxScore:20, date:'2026-07-10'},
+      {subjectId:subj.id, period:'midterm', category:'summative', name:'Unit Test 1', maxScore:30, date:'2026-07-25'},
+      {subjectId:subj.id, period:'midterm', category:'performance', name:'Lab Activity 1', maxScore:25, date:'2026-07-15'}
+    ];
+    items.forEach(it=>DB.items.push({id:uid('itm'), ...it}));
+    const acc = DB.accounts.filter(a=>a.role==='student');
+    const sample = {'Dela Cruz, Juan':[42,18,26,22], 'Santos, Maria':[47,20,28,24], 'Reyes, Mark':[35,15,21,19]};
+    acc.forEach(a=>{
+      const vals = sample[a.name];
+      items.forEach((it,idx)=>{
+        DB.scores.push({studentId:a.id, itemId: DB.items.find(x=>x.name===it.name).id, score:vals[idx]});
+      });
+    });
+    changed = true;
+  }
+  if(changed) saveDB();
+}
+
+/* ============================= GRADE COMPUTE ============================= */
+function computeGrade(studentId, subjectId, period){
+  const subject = DB.subjects.find(s=>s.id===subjectId);
+  if(!subject) return {total:0, details:{}, complete:false};
+  const items = DB.items.filter(i=>i.subjectId===subjectId && i.period===period);
+  let total = 0, details = {}, allComplete = true;
+  subject.rubric.forEach(cat=>{
+    const catItems = items.filter(i=>i.category===cat.key);
+    if(catItems.length===0){
+      details[cat.key] = {label:cat.label, weight:cat.weight, group:cat.group, ratio:null, contribution:0, itemCount:0};
+      allComplete = false;
+      return;
+    }
+    let sumRatio=0, missing=false;
+    catItems.forEach(it=>{
+      const sc = DB.scores.find(s=>s.studentId===studentId && s.itemId===it.id);
+      if(!sc) missing = true;
+      const val = sc? Number(sc.score) : 0;
+      const max = Number(it.maxScore)||1;
+      sumRatio += (val/max);
+    });
+    if(missing) allComplete = false;
+    const avgRatio = sumRatio/catItems.length;
+    const contribution = avgRatio*cat.weight;
+    total += contribution;
+    details[cat.key] = {label:cat.label, weight:cat.weight, group:cat.group, ratio:avgRatio, contribution, itemCount:catItems.length};
+  });
+  return {total, details, complete: allComplete};
+}
+
+/* ============================= HELPERS ============================= */
+function toast(msg){
+  const el = document.createElement('div');
+  el.className='toast'; el.textContent=msg;
+  document.body.appendChild(el);
+  setTimeout(()=>el.remove(), 2600);
+}
+function esc(str){ return String(str).replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+function pct(n){ return (Math.round(n*100)/100).toFixed(2)+'%'; }
+
+/* ============================= RENDER: SHELL ============================= */
+function headerBar(subtitle, rightHtml){
+  return `
+  <div class="brand-header">
+    <div class="max-w-6xl mx-auto flex items-center justify-between px-5 py-3">
+      <div class="flex items-center gap-3">
+        <div class="logo-badge">PSU</div>
+        <div>
+          <div class="font-display text-white text-[17px] leading-tight">Pangasinan State University</div>
+          <div class="text-[12px] leading-tight" style="color:var(--gold-400)">Bayambang Campus ${subtitle? '· '+esc(subtitle):''}</div>
+        </div>
+      </div>
+      <div class="flex items-center gap-2">${rightHtml||''}</div>
+    </div>
+  </div>`;
+}
+
+function accountSettingsPanel(){
+  return `
+  <div class="max-w-md">
+    <button id="backFromAccountBtn" class="btn btn-ghost btn-sm mb-4">← Back</button>
+    <div class="card p-6">
+      <h3 class="font-display text-[16px] mb-1" style="color:var(--green-900)">Change Password</h3>
+      <p class="text-[12.5px] mb-4" style="color:var(--ink-soft)">Signed in as <span class="font-mono">${esc(session.idNumber)}</span></p>
+      <form id="changePwForm">
+        <label class="block text-[12.5px] font-semibold mb-1">Current Password</label>
+        <input type="password" id="curPw" class="mb-3" required>
+        <label class="block text-[12.5px] font-semibold mb-1">New Password</label>
+        <input type="password" id="newPw" class="mb-3" required minlength="4">
+        <label class="block text-[12.5px] font-semibold mb-1">Confirm New Password</label>
+        <input type="password" id="confirmPw" class="mb-4" required minlength="4">
+        <div id="pwError" class="text-[12.5px] text-red-600 mb-2 hidden"></div>
+        <button type="submit" class="btn btn-primary w-full">Update Password</button>
+      </form>
+    </div>
+  </div>`;
+}
+function attachAccountEvents(){
+  const back = document.getElementById('backFromAccountBtn');
+  if(back) back.onclick = ()=>{ ui.showAccount=false; render(); };
+  const f = document.getElementById('changePwForm');
+  if(!f) return;
+  f.onsubmit = (e)=>{
+    e.preventDefault();
+    const cur = document.getElementById('curPw').value;
+    const npw = document.getElementById('newPw').value;
+    const cpw = document.getElementById('confirmPw').value;
+    const acc = DB.accounts.find(a=>a.id===session.id);
+    const err = document.getElementById('pwError');
+    err.classList.add('hidden');
+    if(!acc || acc.password !== cur){ err.textContent='Current password is incorrect.'; err.classList.remove('hidden'); return; }
+    if(npw !== cpw){ err.textContent='New passwords do not match.'; err.classList.remove('hidden'); return; }
+    acc.password = npw;
+    saveDB();
+    toast('Password updated');
+    ui.showAccount = false;
+    render();
+  };
+}
+
+function render(){
+  const app = document.getElementById('app');
+  if(!session){ app.innerHTML = renderLogin(); attachLoginEvents(); return; }
+  if(session.role==='teacher'){ app.innerHTML = renderTeacher(); attachTeacherEvents(); return; }
+  app.innerHTML = renderStudent(); attachStudentEvents();
+}
+
+/* ============================= LOGIN ============================= */
+function renderLogin(){
+  return `
+  ${headerBar('Real-Time Grade Tracking System')}
+  <div class="min-h-[80vh] flex items-center justify-center px-4 py-14">
+    <div class="w-full max-w-sm">
+      <div class="card p-7 shadow-sm">
+        <h1 class="font-display text-[22px] text-center mb-1" style="color:var(--green-900)">Sign in</h1>
+        <p class="text-center text-[13px] mb-5" style="color:var(--ink-soft)">Enter your ID number and password to continue.</p>
+        <div class="flex rounded-lg overflow-hidden border mb-5" style="border-color:var(--line)">
+          <button id="roleTeacherBtn" class="flex-1 py-2 text-[13px] font-semibold" style="background:var(--green-700);color:#fff">Teacher</button>
+          <button id="roleStudentBtn" class="flex-1 py-2 text-[13px] font-semibold" style="background:#fff;color:var(--ink-soft)">Student</button>
+        </div>
+        <form id="loginForm">
+          <label class="block text-[12.5px] font-semibold mb-1" style="color:var(--ink-soft)">ID Number / Username</label>
+          <input type="text" id="loginId" class="mb-3" placeholder="e.g. 2026-0001" required>
+          <label class="block text-[12.5px] font-semibold mb-1" style="color:var(--ink-soft)">Password</label>
+          <input type="password" id="loginPw" class="mb-4" placeholder="••••••••" required>
+          <div id="loginError" class="text-[12.5px] text-red-600 mb-2 hidden"></div>
+          <button type="submit" class="btn btn-primary w-full">Sign in</button>
+        </form>
+        <p class="text-[11.5px] text-center mt-4" style="color:var(--ink-soft)">Demo teacher login — ID: <span class="font-mono">teacher</span> · Password: <span class="font-mono">admin123</span></p>
+      </div>
+    </div>
+  </div>`;
+}
+let loginRole = 'teacher';
+function attachLoginEvents(){
+  document.getElementById('roleTeacherBtn').onclick = ()=>{ loginRole='teacher'; syncRoleButtons(); };
+  document.getElementById('roleStudentBtn').onclick = ()=>{ loginRole='student'; syncRoleButtons(); };
+  function syncRoleButtons(){
+    const t = document.getElementById('roleTeacherBtn'), s = document.getElementById('roleStudentBtn');
+    if(loginRole==='teacher'){ t.style.background='var(--green-700)'; t.style.color='#fff'; s.style.background='#fff'; s.style.color='var(--ink-soft)'; }
+    else{ s.style.background='var(--green-700)'; s.style.color='#fff'; t.style.background='#fff'; t.style.color='var(--ink-soft)'; }
+  }
+  document.getElementById('loginForm').onsubmit = (e)=>{
+    e.preventDefault();
+    const id = document.getElementById('loginId').value.trim();
+    const pw = document.getElementById('loginPw').value;
+    const acc = DB.accounts.find(a=>a.role===loginRole && a.idNumber===id && a.password===pw);
+    const errEl = document.getElementById('loginError');
+    if(!acc){ errEl.textContent = 'Incorrect ID number or password.'; errEl.classList.remove('hidden'); return; }
+    session = {role:acc.role, id:acc.id, idNumber:acc.idNumber, name:acc.name, sectionId:acc.sectionId||null};
+    render();
+  };
+}
+
+/* ============================= TEACHER SHELL ============================= */
+const TEACHER_TABS = [
+  {key:'sections', label:'Sections & Students'},
+  {key:'subjects', label:'Subjects & Rubric'},
+  {key:'items', label:'Assessment Items'},
+  {key:'gradebook', label:'Gradebook'},
+  {key:'import', label:'Import Scores'}
+];
+function renderTeacher(){
+  const tabsHtml = TEACHER_TABS.map(t=>`<div class="tab-btn ${ui.teacherTab===t.key?'active':''}" data-tab="${t.key}">${t.label}</div>`).join('');
+  return `
+  ${headerBar('Teacher Dashboard', `
+    <button id="exportExcelBtn" class="btn btn-gold btn-sm mr-1">⬇ Export to Excel</button>
+    <button id="accountBtn" class="btn btn-ghost btn-sm" style="background:rgba(255,255,255,.1);color:#fff;border-color:rgba(255,255,255,.3)">Change Password</button>
+    <span class="text-[13px] text-white/90 mr-2">${esc(session.name)}</span>
+    <button id="logoutBtn" class="btn btn-ghost btn-sm" style="background:rgba(255,255,255,.1);color:#fff;border-color:rgba(255,255,255,.3)">Log out</button>
+  `)}
+  <div class="max-w-6xl mx-auto px-5">
+    ${ui.showAccount? `<div class="py-6">${accountSettingsPanel()}</div>` : `
+    <div class="flex gap-1 border-b overflow-x-auto mt-2" style="border-color:var(--line)">${tabsHtml}</div>
+    <div class="py-6" id="teacherContent">${renderTeacherTab()}</div>`}
+  </div>`;
+}
+function renderTeacherTab(){
+  if(ui.teacherTab==='sections') return tabSections();
+  if(ui.teacherTab==='subjects') return tabSubjects();
+  if(ui.teacherTab==='items') return tabItems();
+  if(ui.teacherTab==='gradebook') return tabGradebook();
+  if(ui.teacherTab==='import') return tabImport();
+  return '';
+}
+function attachTeacherEvents(){
+  document.getElementById('logoutBtn').onclick = ()=>{ session=null; render(); };
+  document.getElementById('accountBtn').onclick = ()=>{ ui.showAccount=true; render(); };
+  if(ui.showAccount){ attachAccountEvents(); return; }
+  document.getElementById('exportExcelBtn').onclick = exportToExcel;
+  document.querySelectorAll('.tab-btn').forEach(el=>{
+    el.onclick = ()=>{ ui.teacherTab = el.dataset.tab; render(); };
+  });
+  attachTabEvents();
+}
+
+function exportToExcel(){
+  const wb = XLSX.utils.book_new();
+  const usedNames = new Set();
+  DB.subjects.forEach(subj=>{
+    const students = DB.accounts.filter(a=>a.role==='student' && a.sectionId===subj.sectionId);
+    ['midterm','final'].forEach(period=>{
+      const items = DB.items.filter(i=>i.subjectId===subj.id && i.period===period);
+      const header = ['Student ID','Student Name', ...items.map(it=>`${it.name} (/${it.maxScore})`), ...subj.rubric.map(c=>`${c.label} (${c.weight}%)`), 'TOTAL GRADE %'];
+      const rows = students.map(stu=>{
+        const g = computeGrade(stu.id, subj.id, period);
+        const itemVals = items.map(it=>{
+          const sc = DB.scores.find(s=>s.studentId===stu.id && s.itemId===it.id);
+          return sc ? sc.score : '';
+        });
+        const catVals = subj.rubric.map(c=>{
+          const d = g.details[c.key];
+          return d.ratio===null ? '' : Math.round(d.contribution*100)/100;
+        });
+        return [stu.idNumber, stu.name, ...itemVals, ...catVals, Math.round(g.total*100)/100];
+      });
+      const ws = XLSX.utils.aoa_to_sheet([header, ...rows]);
+      let sheetName = `${subj.name} ${period}`.slice(0,31).replace(/[\\/*?:\[\]]/g,'');
+      let finalName = sheetName, n = 1;
+      while(usedNames.has(finalName)){ finalName = (sheetName.slice(0,28)+'_'+(++n)); }
+      usedNames.add(finalName);
+      XLSX.utils.book_append_sheet(wb, ws, finalName || `Sheet${n}`);
+    });
+  });
+  if(wb.SheetNames.length===0){ toast('Nothing to export yet — add subjects and students first'); return; }
+  XLSX.writeFile(wb, `PSU_Bayambang_Grades_${new Date().toISOString().slice(0,10)}.xlsx`);
+  toast('Excel file downloaded');
+}
+function attachTabEvents(){
+  if(ui.teacherTab==='sections') return eventsSections();
+  if(ui.teacherTab==='subjects') return eventsSubjects();
+  if(ui.teacherTab==='items') return eventsItems();
+  if(ui.teacherTab==='gradebook') return eventsGradebook();
+  if(ui.teacherTab==='import') return eventsImport();
+}
+
+/* -------- TAB: Sections & Students -------- */
+function tabSections(){
+  const sectionsHtml = DB.sections.map(sec=>{
+    const students = DB.accounts.filter(a=>a.role==='student' && a.sectionId===sec.id);
+    const rows = students.map(s=>`
+      <tr>
+        <td class="name-cell">${esc(s.name)}</td>
+        <td class="font-mono">${esc(s.idNumber)}</td>
+        <td class="font-mono">${esc(s.password)}</td>
+        <td class="whitespace-nowrap"><button class="btn btn-ghost btn-sm mr-1" data-reset-pw="${s.id}">Change</button><button class="btn btn-danger btn-sm" data-del-student="${s.id}">Remove</button></td>
+      </tr>`).join('');
+    return `
+    <div class="card p-5 mb-4">
+      <div class="flex items-center justify-between mb-3">
+        <h3 class="font-display text-[16px]" style="color:var(--green-900)">${esc(sec.name)} <span class="pill pill-green ml-2">${students.length} students</span></h3>
+        <button class="btn btn-danger btn-sm" data-del-section="${sec.id}">Delete Section</button>
+      </div>
+      <table class="gradebook mb-3">
+        <thead><tr><th>Name</th><th>ID Number</th><th>Password</th><th></th></tr></thead>
+        <tbody>${rows || '<tr><td colspan="4" class="text-[13px]" style="color:var(--ink-soft)">No students yet.</td></tr>'}</tbody>
+      </table>
+      <form class="flex flex-wrap gap-2 items-end add-student-form" data-section="${sec.id}">
+        <div class="w-40"><label class="text-[11.5px] font-semibold block mb-1">Student Name</label><input type="text" class="stu-name" placeholder="Last, First" required></div>
+        <div class="w-36"><label class="text-[11.5px] font-semibold block mb-1">ID Number</label><input type="text" class="stu-id" placeholder="2026-0004" required></div>
+        <button type="submit" class="btn btn-primary btn-sm">+ Add Student</button>
+      </form>
+    </div>`;
+  }).join('');
+  return `
+  <div class="flex items-center justify-between mb-4">
+    <h2 class="font-display text-[19px]" style="color:var(--green-900)">Sections & Students</h2>
+  </div>
+  ${sectionsHtml || '<p class="text-[13px]" style="color:var(--ink-soft)">No sections yet — add one below.</p>'}
+  <div class="card p-5 mb-4">
+    <h3 class="font-display text-[15px] mb-3" style="color:var(--green-900)">Add New Section</h3>
+    <form id="addSectionForm" class="flex gap-2">
+      <input type="text" id="newSectionName" placeholder="e.g. BSIT 2B" required>
+      <button type="submit" class="btn btn-gold btn-sm whitespace-nowrap">+ Add Section</button>
+    </form>
+  </div>
+  <div class="card p-5">
+    <h3 class="font-display text-[15px] mb-3" style="color:var(--green-900)">Import Students from Excel/CSV</h3>
+    <p class="text-[13px] mb-3" style="color:var(--ink-soft)">Upload a .xlsx or .csv file with two columns: <span class="font-mono">StudentID</span> and <span class="font-mono">Name</span>. Every student in the file is added to the section you pick below. Default password = their Student ID.</p>
+    <table class="gradebook mb-3" style="max-width:360px">
+      <thead><tr><th>StudentID</th><th>Name</th></tr></thead>
+      <tbody><tr><td class="font-mono">2026-0004</td><td>Bautista, Ana</td></tr></tbody>
+    </table>
+    <button id="downloadStudentTemplateBtn" class="btn btn-ghost btn-sm mb-4">Download CSV Template</button>
+    <div class="flex items-center gap-3 flex-wrap">
+      <label class="text-[12.5px] font-semibold">Target Section:</label>
+      ${DB.sections.length? `<select id="studentImportSection">${DB.sections.map(s=>`<option value="${s.id}">${esc(s.name)}</option>`).join('')}</select>` : '<span class="text-[12.5px] text-red-600">Add a section first</span>'}
+      <input type="file" id="studentImportFile" accept=".csv,.xlsx,.xls" class="text-[13px]" ${DB.sections.length? '' : 'disabled'}>
+    </div>
+    <div id="studentImportPreview"></div>
+  </div>`;
+}
+function eventsSections(){
+  document.getElementById('addSectionForm').onsubmit = (e)=>{
+    e.preventDefault();
+    const name = document.getElementById('newSectionName').value.trim();
+    if(!name) return;
+    DB.sections.push({id:uid('sec'), name});
+    saveDB(); toast('Section added'); render();
+  };
+  document.querySelectorAll('.add-student-form').forEach(f=>{
+    f.onsubmit = (e)=>{
+      e.preventDefault();
+      const sectionId = f.dataset.section;
+      const name = f.querySelector('.stu-name').value.trim();
+      const idNumber = f.querySelector('.stu-id').value.trim();
+      if(!name || !idNumber) return;
+      if(DB.accounts.some(a=>a.idNumber===idNumber && a.role==='student')){ toast('That ID number already exists'); return; }
+      DB.accounts.push({id:uid('acc'), role:'student', idNumber, password:idNumber, name, sectionId});
+      saveDB(); toast('Student added — default password is their ID number'); render();
+    };
+  });
+  document.querySelectorAll('[data-reset-pw]').forEach(b=>{
+    b.onclick = ()=>{
+      const id = b.dataset.resetPw;
+      const acc = DB.accounts.find(a=>a.id===id);
+      const newPw = prompt(`Set a new password for ${acc.name}:`, acc.password);
+      if(newPw===null || newPw.trim()==='') return;
+      acc.password = newPw.trim();
+      saveDB(); toast('Password updated'); render();
+    };
+  });
+  document.querySelectorAll('[data-del-student]').forEach(b=>{
+    b.onclick = ()=>{
+      if(!confirm('Remove this student and their scores?')) return;
+      const id = b.dataset.delStudent;
+      DB.accounts = DB.accounts.filter(a=>a.id!==id);
+      DB.scores = DB.scores.filter(s=>s.studentId!==id);
+      saveDB(); render();
+    };
+  });
+  document.querySelectorAll('[data-del-section]').forEach(b=>{
+    b.onclick = ()=>{
+      if(!confirm('Delete this section, its students, subjects, items and scores? This cannot be undone.')) return;
+      const id = b.dataset.delSection;
+      const studentIds = DB.accounts.filter(a=>a.sectionId===id).map(a=>a.id);
+      const subjectIds = DB.subjects.filter(s=>s.sectionId===id).map(s=>s.id);
+      const itemIds = DB.items.filter(i=>subjectIds.includes(i.subjectId)).map(i=>i.id);
+      DB.sections = DB.sections.filter(s=>s.id!==id);
+      DB.accounts = DB.accounts.filter(a=>a.sectionId!==id);
+      DB.subjects = DB.subjects.filter(s=>s.sectionId!==id);
+      DB.items = DB.items.filter(i=>!subjectIds.includes(i.subjectId));
+      DB.scores = DB.scores.filter(s=>!studentIds.includes(s.studentId) && !itemIds.includes(s.itemId));
+      saveDB(); render();
+    };
+  });
+  const tmplBtn = document.getElementById('downloadStudentTemplateBtn');
+  if(tmplBtn) tmplBtn.onclick = ()=>{
+    const csv = 'StudentID,Name\n2026-0004,Bautista, Ana\n';
+    const blob = new Blob([csv], {type:'text/csv'});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob); a.download = 'student_import_template.csv'; a.click();
+  };
+  const stuFileInput = document.getElementById('studentImportFile');
+  if(stuFileInput) stuFileInput.onchange = (e)=>{
+    const file = e.target.files[0];
+    if(!file) return;
+    const sectionId = document.getElementById('studentImportSection').value;
+    const isExcel = /\.xlsx?$/i.test(file.name);
+    if(isExcel){
+      const reader = new FileReader();
+      reader.onload = (ev)=>{
+        const wb = XLSX.read(new Uint8Array(ev.target.result), {type:'array'});
+        const csv = XLSX.utils.sheet_to_csv(wb.Sheets[wb.SheetNames[0]]);
+        parseStudentImportCsv(csv, sectionId);
+      };
+      reader.readAsArrayBuffer(file);
+    } else {
+      const reader = new FileReader();
+      reader.onload = (ev)=>parseStudentImportCsv(ev.target.result, sectionId);
+      reader.readAsText(file);
+    }
+  };
+}
+let pendingStudentRows = null;
+function parseStudentImportCsv(csvText, sectionId){
+  const result = Papa.parse(csvText.trim(), {header:true, skipEmptyLines:true});
+  const preview = result.data.map((r,idx)=>{
+    const idNumber = (r.StudentID||'').trim();
+    const name = (r.Name||'').trim();
+    let issue = null;
+    if(!idNumber) issue = 'Missing StudentID';
+    else if(!name) issue = 'Missing Name';
+    else if(DB.accounts.some(a=>a.role==='student' && a.idNumber===idNumber)) issue = 'ID Number already exists';
+    return {row:idx+1, idNumber, name, sectionId, issue};
+  });
+  pendingStudentRows = preview;
+  renderStudentImportPreview();
+}
+function renderStudentImportPreview(){
+  const el = document.getElementById('studentImportPreview');
+  if(!el) return;
+  if(!pendingStudentRows){ el.innerHTML=''; return; }
+  const validCount = pendingStudentRows.filter(r=>!r.issue).length;
+  const rowsHtml = pendingStudentRows.map(r=>`
+    <tr class="${r.issue?'bg-red-50':''}">
+      <td>${r.row}</td><td class="font-mono">${esc(r.idNumber)}</td><td>${esc(r.name)}</td>
+      <td class="text-red-600 text-[11.5px]">${r.issue? esc(r.issue):'OK'}</td>
+    </tr>`).join('');
+  el.innerHTML = `
+  <div class="mt-4">
+    <div class="flex items-center justify-between mb-2">
+      <h4 class="font-display text-[14px]" style="color:var(--green-900)">Preview — ${validCount}/${pendingStudentRows.length} valid</h4>
+      <button id="commitStudentImportBtn" class="btn btn-primary btn-sm" ${validCount===0?'disabled':''}>Add ${validCount} Students</button>
+    </div>
+    <div class="overflow-x-auto">
+    <table class="gradebook">
+      <thead><tr><th>#</th><th>StudentID</th><th>Name</th><th>Status</th></tr></thead>
+      <tbody>${rowsHtml}</tbody>
+    </table>
+    </div>
+  </div>`;
+  const btn = document.getElementById('commitStudentImportBtn');
+  if(btn) btn.onclick = ()=>{
+    pendingStudentRows.filter(r=>!r.issue).forEach(r=>{
+      DB.accounts.push({id:uid('acc'), role:'student', idNumber:r.idNumber, password:r.idNumber, name:r.name, sectionId:r.sectionId});
+    });
+    saveDB();
+    pendingStudentRows = null;
+    toast('Students imported');
+    render();
+  };
+}
+
+/* -------- TAB: Subjects & Rubric -------- */
+function tabSubjects(){
+  const subjectsHtml = DB.subjects.map(subj=>{
+    const sec = DB.sections.find(s=>s.id===subj.sectionId);
+    const rows = subj.rubric.map(cat=>`
+      <tr>
+        <td class="name-cell">${cat.group? '&nbsp;&nbsp;'+esc(cat.label) : esc(cat.label)}</td>
+        <td><input type="number" min="0" max="100" class="score-input rubric-weight" data-subject="${subj.id}" data-cat="${cat.key}" value="${cat.weight}"> %</td>
+      </tr>`).join('');
+    const totalW = subj.rubric.reduce((a,c)=>a+Number(c.weight),0);
+    return `
+    <div class="card p-5 mb-4">
+      <div class="flex items-center justify-between mb-3">
+        <h3 class="font-display text-[16px]" style="color:var(--green-900)">${esc(subj.name)} <span class="pill pill-gold ml-2">${sec? esc(sec.name):'—'}</span></h3>
+        <button class="btn btn-danger btn-sm" data-del-subject="${subj.id}">Delete Subject</button>
+      </div>
+      <table class="gradebook mb-2">
+        <thead><tr><th style="text-align:left">Category</th><th>Weight</th></tr></thead>
+        <tbody>${rows}</tbody>
+        <tfoot><tr><td class="name-cell">Total</td><td class="font-mono ${totalW===100?'':'text-red-600 font-bold'}">${totalW}%</td></tr></tfoot>
+      </table>
+      <p class="text-[11.5px]" style="color:var(--ink-soft)">Applies to both Midterm and Final grade periods. Weights should total 100%.</p>
+    </div>`;
+  }).join('');
+  const sectionOptions = DB.sections.map(s=>`<option value="${s.id}">${esc(s.name)}</option>`).join('');
+  return `
+  <h2 class="font-display text-[19px] mb-4" style="color:var(--green-900)">Subjects & Grading Rubric</h2>
+  ${subjectsHtml || '<p class="text-[13px] mb-4" style="color:var(--ink-soft)">No subjects yet.</p>'}
+  <div class="card p-5">
+    <h3 class="font-display text-[15px] mb-3" style="color:var(--green-900)">Add New Subject</h3>
+    <form id="addSubjectForm" class="flex flex-wrap gap-2 items-end">
+      <div><label class="text-[11.5px] font-semibold block mb-1">Subject Name</label><input type="text" id="newSubjectName" placeholder="e.g. Programming 1" required></div>
+      <div><label class="text-[11.5px] font-semibold block mb-1">Section</label><select id="newSubjectSection">${sectionOptions}</select></div>
+      <button type="submit" class="btn btn-gold btn-sm whitespace-nowrap">+ Add Subject</button>
+    </form>
+    ${DB.sections.length===0? '<p class="text-[12.5px] text-red-600 mt-2">Add a section first.</p>':''}
+  </div>`;
+}
+function eventsSubjects(){
+  const f = document.getElementById('addSubjectForm');
+  if(f) f.onsubmit = (e)=>{
+    e.preventDefault();
+    const name = document.getElementById('newSubjectName').value.trim();
+    const sectionId = document.getElementById('newSubjectSection').value;
+    if(!name || !sectionId) return;
+    DB.subjects.push({id:uid('sub'), name, sectionId, rubric:defaultRubric()});
+    saveDB(); toast('Subject added with default rubric'); render();
+  };
+  document.querySelectorAll('.rubric-weight').forEach(inp=>{
+    inp.onchange = ()=>{
+      const subj = DB.subjects.find(s=>s.id===inp.dataset.subject);
+      const cat = subj.rubric.find(c=>c.key===inp.dataset.cat);
+      cat.weight = Number(inp.value)||0;
+      saveDB(); render();
+    };
+  });
+  document.querySelectorAll('[data-del-subject]').forEach(b=>{
+    b.onclick = ()=>{
+      if(!confirm('Delete this subject and all its items/scores?')) return;
+      const id = b.dataset.delSubject;
+      const itemIds = DB.items.filter(i=>i.subjectId===id).map(i=>i.id);
+      DB.subjects = DB.subjects.filter(s=>s.id!==id);
+      DB.items = DB.items.filter(i=>i.subjectId!==id);
+      DB.scores = DB.scores.filter(s=>!itemIds.includes(s.itemId));
+      saveDB(); render();
+    };
+  });
+}
+
+/* -------- TAB: Assessment Items -------- */
+function subjectSelectorHtml(selectedId, idAttr){
+  const opts = DB.subjects.map(s=>{
+    const sec = DB.sections.find(x=>x.id===s.sectionId);
+    return `<option value="${s.id}" ${selectedId===s.id?'selected':''}>${esc(s.name)} (${sec?esc(sec.name):'—'})</option>`;
+  }).join('');
+  return `<select id="${idAttr}">${opts}</select>`;
+}
+function tabItems(){
+  if(!ui.selSubject && DB.subjects.length) ui.selSubject = DB.subjects[0].id;
+  const subj = DB.subjects.find(s=>s.id===ui.selSubject);
+  let itemsTable = '';
+  if(subj){
+    const catOptions = subj.rubric.map(c=>`<option value="${c.key}">${esc(c.label)}</option>`).join('');
+    ['midterm','final'].forEach(period=>{
+      const rows = DB.items.filter(i=>i.subjectId===subj.id && i.period===period).map(it=>{
+        const cat = subj.rubric.find(c=>c.key===it.category);
+        return `<tr>
+          <td class="name-cell">${esc(it.name)}</td>
+          <td>${cat? esc(cat.label):it.category}</td>
+          <td class="font-mono">${it.maxScore}</td>
+          <td class="font-mono">${it.date||'—'}</td>
+          <td><button class="btn btn-danger btn-sm" data-del-item="${it.id}">Remove</button></td>
+        </tr>`;
+      }).join('');
+      itemsTable += `
+      <div class="mb-5">
+        <h4 class="font-display text-[14px] mb-2" style="color:var(--green-800)">${period==='midterm'?'Midterm Period':'Final Period'}</h4>
+        <table class="gradebook mb-2">
+          <thead><tr><th style="text-align:left">Item Name</th><th>Category</th><th>Max Score</th><th>Date</th><th></th></tr></thead>
+          <tbody>${rows || `<tr><td colspan="5" class="text-[13px]" style="color:var(--ink-soft)">No items yet.</td></tr>`}</tbody>
+        </table>
+        <form class="add-item-form flex flex-wrap gap-2 items-end" data-period="${period}">
+          <div class="w-40"><label class="text-[11.5px] font-semibold block mb-1">Item Name</label><input type="text" class="it-name" placeholder="e.g. Quiz 2" required></div>
+          <div class="w-44"><label class="text-[11.5px] font-semibold block mb-1">Category</label><select class="it-cat">${catOptions}</select></div>
+          <div class="w-20"><label class="text-[11.5px] font-semibold block mb-1">Max Score</label><input type="number" min="1" class="it-max" value="100" required></div>
+          <div class="w-36"><label class="text-[11.5px] font-semibold block mb-1">Date</label><input type="date" class="it-date"></div>
+          <button type="submit" class="btn btn-gold btn-sm">+ Add Item</button>
+        </form>
+      </div>`;
+    });
+  }
+  return `
+  <div class="flex items-center justify-between mb-4 flex-wrap gap-2">
+    <h2 class="font-display text-[19px]" style="color:var(--green-900)">Assessment Items</h2>
+    ${DB.subjects.length? `<div class="flex items-center gap-2"><label class="text-[12.5px] font-semibold">Subject:</label>${subjectSelectorHtml(ui.selSubject,'itemsSubjectSelect')}</div>`:''}
+  </div>
+  ${DB.subjects.length? `<div class="card p-5">${itemsTable}</div>` : '<p class="text-[13px]" style="color:var(--ink-soft)">Add a subject first (Subjects & Rubric tab).</p>'}
+  `;
+}
+function eventsItems(){
+  const sel = document.getElementById('itemsSubjectSelect');
+  if(sel) sel.onchange = ()=>{ ui.selSubject = sel.value; render(); };
+  document.querySelectorAll('.add-item-form').forEach(f=>{
+    f.onsubmit = (e)=>{
+      e.preventDefault();
+      const period = f.dataset.period;
+      const name = f.querySelector('.it-name').value.trim();
+      const category = f.querySelector('.it-cat').value;
+      const maxScore = Number(f.querySelector('.it-max').value)||100;
+      const date = f.querySelector('.it-date').value;
+      if(!name) return;
+      DB.items.push({id:uid('itm'), subjectId:ui.selSubject, period, category, name, maxScore, date});
+      saveDB(); toast('Item added'); render();
+    };
+  });
+  document.querySelectorAll('[data-del-item]').forEach(b=>{
+    b.onclick = ()=>{
+      if(!confirm('Remove this item and all related scores?')) return;
+      const id = b.dataset.delItem;
+      DB.items = DB.items.filter(i=>i.id!==id);
+      DB.scores = DB.scores.filter(s=>s.itemId!==id);
+      saveDB(); render();
+    };
+  });
+}
+
+/* -------- TAB: Gradebook -------- */
+function tabGradebook(){
+  if(!ui.selSubject && DB.subjects.length) ui.selSubject = DB.subjects[0].id;
+  const subj = DB.subjects.find(s=>s.id===ui.selSubject);
+  let body = '<p class="text-[13px]" style="color:var(--ink-soft)">Add a subject first.</p>';
+  if(subj){
+    const sec = DB.sections.find(s=>s.id===subj.sectionId);
+    const students = DB.accounts.filter(a=>a.role==='student' && a.sectionId===sec.id);
+    const items = DB.items.filter(i=>i.subjectId===subj.id && i.period===ui.selPeriod);
+    if(items.length===0){
+      body = `<p class="text-[13px]" style="color:var(--ink-soft)">No assessment items yet for this subject/period. Add some in the Assessment Items tab.</p>`;
+    } else if(students.length===0){
+      body = `<p class="text-[13px]" style="color:var(--ink-soft)">No students in this section yet.</p>`;
+    } else {
+      const itemHeaders = items.map(it=>`<th>${esc(it.name)}<br><span class="font-mono" style="font-weight:400">/${it.maxScore}</span></th>`).join('');
+      const rows = students.map(stu=>{
+        const cells = items.map(it=>{
+          const sc = DB.scores.find(s=>s.studentId===stu.id && s.itemId===it.id);
+          return `<td><input type="number" min="0" max="${it.maxScore}" class="score-input score-cell" data-student="${stu.id}" data-item="${it.id}" value="${sc? sc.score : ''}"></td>`;
+        }).join('');
+        const g = computeGrade(stu.id, subj.id, ui.selPeriod);
+        return `<tr><td class="name-cell">${esc(stu.name)}</td>${cells}<td class="font-mono font-bold">${pct(g.total)}</td></tr>`;
+      }).join('');
+      body = `
+      <table class="gradebook">
+        <thead><tr><th style="text-align:left">Student</th>${itemHeaders}<th>${ui.selPeriod==='midterm'?'Midterm':'Final'} Grade</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>`;
+    }
+  }
+  return `
+  <div class="flex items-center justify-between mb-4 flex-wrap gap-2">
+    <h2 class="font-display text-[19px]" style="color:var(--green-900)">Gradebook</h2>
+    <div class="flex items-center gap-3 flex-wrap">
+      ${DB.subjects.length? `<div class="flex items-center gap-2"><label class="text-[12.5px] font-semibold">Subject:</label>${subjectSelectorHtml(ui.selSubject,'gbSubjectSelect')}</div>`:''}
+      <div class="flex items-center gap-2">
+        <label class="text-[12.5px] font-semibold">Period:</label>
+        <select id="gbPeriodSelect">
+          <option value="midterm" ${ui.selPeriod==='midterm'?'selected':''}>Midterm</option>
+          <option value="final" ${ui.selPeriod==='final'?'selected':''}>Final</option>
+        </select>
+      </div>
+    </div>
+  </div>
+  <div class="card p-5 overflow-x-auto">${body}</div>
+  <p class="text-[11.5px] mt-2" style="color:var(--ink-soft)">Grades recalculate instantly and are visible to students the moment you enter a score.</p>`;
+}
+function eventsGradebook(){
+  const sSel = document.getElementById('gbSubjectSelect');
+  if(sSel) sSel.onchange = ()=>{ ui.selSubject = sSel.value; render(); };
+  const pSel = document.getElementById('gbPeriodSelect');
+  if(pSel) pSel.onchange = ()=>{ ui.selPeriod = pSel.value; render(); };
+  document.querySelectorAll('.score-cell').forEach(inp=>{
+    inp.onchange = ()=>{
+      const studentId = inp.dataset.student, itemId = inp.dataset.item;
+      const val = inp.value==='' ? null : Number(inp.value);
+      let rec = DB.scores.find(s=>s.studentId===studentId && s.itemId===itemId);
+      if(val===null){
+        DB.scores = DB.scores.filter(s=>!(s.studentId===studentId && s.itemId===itemId));
+      } else if(rec){ rec.score = val; }
+      else { DB.scores.push({studentId, itemId, score:val}); }
+      saveDB(); render();
+    };
+  });
+}
+
+/* -------- TAB: Import Scores -------- */
+function tabImport(){
+  return `
+  <h2 class="font-display text-[19px] mb-4" style="color:var(--green-900)">Import Scores (Excel / CSV)</h2>
+  <div class="card p-5 mb-4">
+    <p class="text-[13.5px] mb-3" style="color:var(--ink-soft)">Upload a .csv or .xlsx file with these columns. Existing items are matched by <span class="font-mono">Name + Category + Period</span>; new ones are created automatically. Student ID must already exist under the target section.</p>
+    <table class="gradebook mb-4">
+      <thead><tr><th>StudentID</th><th>Period</th><th>Category</th><th>ItemName</th><th>MaxScore</th><th>Score</th></tr></thead>
+      <tbody><tr><td class="font-mono">2026-0001</td><td>midterm</td><td>exam</td><td>Midterm Exam</td><td>50</td><td>45</td></tr></tbody>
+    </table>
+    <p class="text-[11.5px] mb-3" style="color:var(--ink-soft)">Valid <span class="font-mono">Category</span> values: exam, formative, summative, performance. Valid <span class="font-mono">Period</span> values: midterm, final.</p>
+    <button id="downloadTemplateBtn" class="btn btn-ghost btn-sm mb-4">Download CSV Template</button>
+    <div class="flex items-center gap-3 flex-wrap">
+      <label class="text-[12.5px] font-semibold">Target Subject:</label>
+      ${DB.subjects.length? subjectSelectorHtml(ui.selSubject,'importSubjectSelect') : '<span class="text-[12.5px] text-red-600">Add a subject first</span>'}
+      <input type="file" id="importFile" accept=".csv,.xlsx,.xls" class="text-[13px]">
+    </div>
+  </div>
+  <div id="importPreview"></div>
+  `;
+}
+let pendingImportRows = null;
+function eventsImport(){
+  const sSel = document.getElementById('importSubjectSelect');
+  if(sSel) sSel.onchange = ()=>{ ui.selSubject = sSel.value; };
+  document.getElementById('downloadTemplateBtn').onclick = ()=>{
+    const csv = 'StudentID,Period,Category,ItemName,MaxScore,Score\n2026-0001,midterm,exam,Midterm Exam,50,45\n';
+    const blob = new Blob([csv], {type:'text/csv'});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob); a.download = 'grade_import_template.csv'; a.click();
+  };
+  const fileInput = document.getElementById('importFile');
+  if(fileInput) fileInput.onchange = (e)=>{
+    const file = e.target.files[0];
+    if(!file) return;
+    if(!ui.selSubject){ toast('Select a target subject first'); return; }
+    const isExcel = /\.xlsx?$/i.test(file.name);
+    if(isExcel){
+      const reader = new FileReader();
+      reader.onload = (ev)=>{
+        const wb = XLSX.read(new Uint8Array(ev.target.result), {type:'array'});
+        const csv = XLSX.utils.sheet_to_csv(wb.Sheets[wb.SheetNames[0]]);
+        parseImportCsv(csv);
+      };
+      reader.readAsArrayBuffer(file);
+    } else {
+      const reader = new FileReader();
+      reader.onload = (ev)=>parseImportCsv(ev.target.result);
+      reader.readAsText(file);
+    }
+  };
+}
+function parseImportCsv(csvText){
+  const result = Papa.parse(csvText.trim(), {header:true, skipEmptyLines:true});
+  const rows = result.data;
+  const subj = DB.subjects.find(s=>s.id===ui.selSubject);
+  const validCats = subj.rubric.map(c=>c.key);
+  const preview = [];
+  rows.forEach((r,idx)=>{
+    const studentId = (r.StudentID||'').trim();
+    const period = (r.Period||'').trim().toLowerCase();
+    const category = (r.Category||'').trim().toLowerCase();
+    const itemName = (r.ItemName||'').trim();
+    const maxScore = Number(r.MaxScore);
+    const score = Number(r.Score);
+    const student = DB.accounts.find(a=>a.role==='student' && a.idNumber===studentId && a.sectionId===subj.sectionId);
+    let issue = null;
+    if(!student) issue = 'Unknown Student ID for this subject\'s section';
+    else if(!['midterm','final'].includes(period)) issue = 'Invalid Period';
+    else if(!validCats.includes(category)) issue = 'Invalid Category for this subject\'s rubric';
+    else if(!itemName) issue = 'Missing Item Name';
+    else if(!maxScore || isNaN(maxScore)) issue = 'Invalid Max Score';
+    else if(isNaN(score)) issue = 'Invalid Score';
+    preview.push({row:idx+1, studentId, studentName:student?student.name:'—', period, category, itemName, maxScore, score, issue});
+  });
+  pendingImportRows = preview;
+  renderImportPreview();
+}
+function renderImportPreview(){
+  const el = document.getElementById('importPreview');
+  if(!pendingImportRows){ el.innerHTML=''; return; }
+  const validCount = pendingImportRows.filter(r=>!r.issue).length;
+  const rowsHtml = pendingImportRows.map(r=>`
+    <tr class="${r.issue?'bg-red-50':''}">
+      <td>${r.row}</td><td class="font-mono">${esc(r.studentId)}</td><td>${esc(r.studentName)}</td>
+      <td>${esc(r.period)}</td><td>${esc(r.category)}</td><td>${esc(r.itemName)}</td>
+      <td>${r.maxScore}</td><td>${r.score}</td>
+      <td class="text-red-600 text-[11.5px]">${r.issue? esc(r.issue):'OK'}</td>
+    </tr>`).join('');
+  el.innerHTML = `
+  <div class="card p-5">
+    <div class="flex items-center justify-between mb-3">
+      <h3 class="font-display text-[15px]" style="color:var(--green-900)">Preview — ${validCount}/${pendingImportRows.length} rows valid</h3>
+      <button id="commitImportBtn" class="btn btn-primary btn-sm" ${validCount===0?'disabled':''}>Commit ${validCount} Rows</button>
+    </div>
+    <div class="overflow-x-auto">
+    <table class="gradebook">
+      <thead><tr><th>#</th><th>ID</th><th>Name</th><th>Period</th><th>Category</th><th>Item</th><th>Max</th><th>Score</th><th>Status</th></tr></thead>
+      <tbody>${rowsHtml}</tbody>
+    </table>
+    </div>
+  </div>`;
+  const btn = document.getElementById('commitImportBtn');
+  if(btn) btn.onclick = ()=>{
+    const subj = DB.subjects.find(s=>s.id===ui.selSubject);
+    pendingImportRows.filter(r=>!r.issue).forEach(r=>{
+      let item = DB.items.find(i=>i.subjectId===subj.id && i.period===r.period && i.category===r.category && i.name===r.itemName);
+      if(!item){
+        item = {id:uid('itm'), subjectId:subj.id, period:r.period, category:r.category, name:r.itemName, maxScore:r.maxScore, date:''};
+        DB.items.push(item);
+      }
+      const student = DB.accounts.find(a=>a.idNumber===r.studentId && a.role==='student');
+      let rec = DB.scores.find(s=>s.studentId===student.id && s.itemId===item.id);
+      if(rec) rec.score = r.score;
+      else DB.scores.push({studentId:student.id, itemId:item.id, score:r.score});
+    });
+    saveDB();
+    pendingImportRows = null;
+    toast('Import committed');
+    render();
+  };
+}
+
+/* ============================= STUDENT VIEW ============================= */
+function renderStudent(){
+  const sec = DB.sections.find(s=>s.id===session.sectionId);
+  const subjects = DB.subjects.filter(s=>s.sectionId===session.sectionId);
+  if(!ui.studentSelSubject && subjects.length) ui.studentSelSubject = subjects[0].id;
+  const subj = subjects.find(s=>s.id===ui.studentSelSubject);
+  let content = '<p class="text-[13.5px]" style="color:var(--ink-soft)">No subjects available yet.</p>';
+  if(subj){
+    const g = computeGrade(session.id, subj.id, ui.studentSelPeriod);
+    const items = DB.items.filter(i=>i.subjectId===subj.id && i.period===ui.studentSelPeriod);
+    const ringColor = g.total>=75? 'var(--green-600)' : g.total>=50? 'var(--gold-500)':'#b3453f';
+    const circumference = 2*Math.PI*54;
+    const dash = Math.min(g.total,100)/100*circumference;
+    const rubricRows = subj.rubric.map(cat=>{
+      const d = g.details[cat.key];
+      return `<tr>
+        <td class="name-cell">${cat.group?'&nbsp;&nbsp;':''}${esc(cat.label)}</td>
+        <td class="font-mono">${cat.weight}%</td>
+        <td class="font-mono">${d.ratio===null? '—' : pct(d.ratio*100)}</td>
+        <td class="font-mono font-bold">${pct(d.contribution)}</td>
+      </tr>`;
+    }).join('');
+    const itemRows = items.map(it=>{
+      const sc = DB.scores.find(s=>s.studentId===session.id && s.itemId===it.id);
+      const cat = subj.rubric.find(c=>c.key===it.category);
+      return `<tr>
+        <td class="name-cell">${esc(it.name)}</td>
+        <td>${cat?esc(cat.label):''}</td>
+        <td class="font-mono">${sc? sc.score : '—'} / ${it.maxScore}</td>
+        <td class="font-mono">${it.date||'—'}</td>
+      </tr>`;
+    }).join('');
+    content = `
+    <div class="grid md:grid-cols-[220px_1fr] gap-6">
+      <div class="card p-6 flex flex-col items-center justify-center">
+        <svg width="140" height="140" viewBox="0 0 140 140">
+          <circle cx="70" cy="70" r="54" fill="none" stroke="#e9e5d8" stroke-width="12"/>
+          <circle cx="70" cy="70" r="54" fill="none" stroke="${ringColor}" stroke-width="12" stroke-linecap="round"
+            stroke-dasharray="${dash} ${circumference}" transform="rotate(-90 70 70)"/>
+          <text x="70" y="66" text-anchor="middle" font-family="Lora,serif" font-size="24" font-weight="700" fill="var(--ink)">${pct(g.total).replace('%','')}</text>
+          <text x="70" y="84" text-anchor="middle" font-family="Inter,sans-serif" font-size="11" fill="var(--ink-soft)">percent</text>
+        </svg>
+        <p class="font-display text-[14px] mt-2 text-center" style="color:var(--green-900)">${ui.studentSelPeriod==='midterm'?'Midterm':'Final'} Grade</p>
+        ${!g.complete? '<p class="text-[11px] text-center mt-1" style="color:var(--ink-soft)">Some categories have no recorded items yet.</p>':''}
+      </div>
+      <div>
+        <table class="gradebook mb-5">
+          <thead><tr><th style="text-align:left">Rubric Component</th><th>Weight</th><th>Your Score %</th><th>Contribution</th></tr></thead>
+          <tbody>${rubricRows}</tbody>
+        </table>
+        <h4 class="font-display text-[14px] mb-2" style="color:var(--green-800)">Individual Items</h4>
+        <table class="gradebook">
+          <thead><tr><th style="text-align:left">Item</th><th>Category</th><th>Score</th><th>Date</th></tr></thead>
+          <tbody>${itemRows || `<tr><td colspan="4" class="text-[13px]" style="color:var(--ink-soft)">No items recorded yet.</td></tr>`}</tbody>
+        </table>
+      </div>
+    </div>`;
+  }
+  const subjOptions = subjects.map(s=>`<option value="${s.id}" ${s.id===ui.studentSelSubject?'selected':''}>${esc(s.name)}</option>`).join('');
+  return `
+  ${headerBar('Student Portal', `
+    <button id="accountBtn" class="btn btn-ghost btn-sm" style="background:rgba(255,255,255,.1);color:#fff;border-color:rgba(255,255,255,.3)">Change Password</button>
+    <span class="text-[13px] text-white/90 mr-2">${esc(session.name)} · ${sec?esc(sec.name):''}</span>
+    <button id="logoutBtn" class="btn btn-ghost btn-sm" style="background:rgba(255,255,255,.1);color:#fff;border-color:rgba(255,255,255,.3)">Log out</button>
+  `)}
+  <div class="max-w-5xl mx-auto px-5 py-6">
+    ${ui.showAccount? accountSettingsPanel() : `
+    <div class="flex items-center justify-between mb-5 flex-wrap gap-3">
+      <h2 class="font-display text-[19px]" style="color:var(--green-900)">My Grades</h2>
+      <div class="flex items-center gap-3">
+        ${subjects.length? `<select id="studentSubjectSelect">${subjOptions}</select>`:''}
+        <div class="flex rounded-lg overflow-hidden border" style="border-color:var(--line)">
+          <button id="periodMidBtn" class="px-3 py-1.5 text-[12.5px] font-semibold" style="${ui.studentSelPeriod==='midterm'?'background:var(--green-700);color:#fff':'background:#fff;color:var(--ink-soft)'}">Midterm</button>
+          <button id="periodFinBtn" class="px-3 py-1.5 text-[12.5px] font-semibold" style="${ui.studentSelPeriod==='final'?'background:var(--green-700);color:#fff':'background:#fff;color:var(--ink-soft)'}">Final</button>
+        </div>
+      </div>
+    </div>
+    ${content}
+    <p class="text-[11px] mt-6 text-center" style="color:var(--ink-soft)">View-only — contact your instructor to request a correction.</p>`}
+  </div>`;
+}
+function attachStudentEvents(){
+  document.getElementById('logoutBtn').onclick = ()=>{ session=null; render(); };
+  document.getElementById('accountBtn').onclick = ()=>{ ui.showAccount=true; render(); };
+  if(ui.showAccount){ attachAccountEvents(); return; }
+  const sSel = document.getElementById('studentSubjectSelect');
+  if(sSel) sSel.onchange = ()=>{ ui.studentSelSubject = sSel.value; render(); };
+  const mid = document.getElementById('periodMidBtn'), fin = document.getElementById('periodFinBtn');
+  if(mid) mid.onclick = ()=>{ ui.studentSelPeriod='midterm'; render(); };
+  if(fin) fin.onclick = ()=>{ ui.studentSelPeriod='final'; render(); };
+}
+
+/* ============================= INIT ============================= */
+(async function init(){
+  document.getElementById('app').innerHTML = `<div class="min-h-screen flex items-center justify-center text-[14px]" style="color:var(--ink-soft)">Connecting to cloud database…</div>`;
+  try{
+    await initFirebase();
+  }catch(e){
+    return; // initFirebase already rendered a setup-needed message
+  }
+  subscribeDB(); // live-updates DB and calls render() whenever cloud data changes
+})();
+</script>
+</body>
+</html>
