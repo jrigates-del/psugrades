@@ -61,9 +61,16 @@ function setStep(id, ok, text){
   }
 
   const db = firebase.firestore();
+  db.settings({ experimentalForceLongPolling: true, useFetchStreams: false });
   const testValue = 'test-' + Date.now();
+  function withTimeout(promise, ms){
+    return Promise.race([
+      promise,
+      new Promise((_, reject) => setTimeout(()=>reject(new Error('Timed out after '+(ms/1000)+'s — request never completed')), ms))
+    ]);
+  }
   try{
-    await db.collection('connectionTest').doc('ping').set({value: testValue, at: Date.now()});
+    await withTimeout(db.collection('connectionTest').doc('ping').set({value: testValue, at: Date.now()}), 12000);
     setStep('step3', true, '3. Writing a test document to Firestore... OK');
   }catch(e){
     setStep('step3', false, '3. Writing a test document to Firestore... FAILED: ' + e.message);
