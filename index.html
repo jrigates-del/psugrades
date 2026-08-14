@@ -131,6 +131,7 @@ async function initFirebase(){
   firebase.initializeApp(firebaseConfig);
   await firebase.auth().signInAnonymously();
   db = firebase.firestore();
+  db.settings({ experimentalAutoDetectLongPolling: true, useFetchStreams: false });
   firebaseReady = true;
 }
 
@@ -392,6 +393,20 @@ function attachTeacherEvents(){
   attachTabEvents();
 }
 
+function downloadCredentialsForEmail(){
+  const students = DB.accounts.filter(a=>a.role==='student');
+  if(students.length===0){ toast('No students yet'); return; }
+  const header = ['Name','Email','Section','StudentID','Password'];
+  const rows = students.map(s=>{
+    const sec = DB.sections.find(x=>x.id===s.sectionId);
+    return [s.name, s.email||'', sec?sec.name:'', s.idNumber, s.password];
+  });
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.aoa_to_sheet([header, ...rows]);
+  XLSX.utils.book_append_sheet(wb, ws, 'Credentials');
+  XLSX.writeFile(wb, `PSU_Bayambang_Login_Credentials_${new Date().toISOString().slice(0,10)}.xlsx`);
+  toast('Credentials file downloaded');
+}
 function exportToExcel(){
   const wb = XLSX.utils.book_new();
   const usedNames = new Set();
@@ -440,8 +455,9 @@ function tabSections(){
       <tr>
         <td class="name-cell">${esc(s.name)}</td>
         <td class="font-mono">${esc(s.idNumber)}</td>
+        <td class="font-mono">${esc(s.email||'')}</td>
         <td class="font-mono">${esc(s.password)}</td>
-        <td class="whitespace-nowrap"><button class="btn btn-ghost btn-sm mr-1" data-reset-pw="${s.id}">Change</button><button class="btn btn-danger btn-sm" data-del-student="${s.id}">Remove</button></td>
+        <td class="whitespace-nowrap"><button class="btn btn-ghost btn-sm mr-1" data-edit-email="${s.id}">Email</button><button class="btn btn-ghost btn-sm mr-1" data-reset-pw="${s.id}">Password</button><button class="btn btn-danger btn-sm" data-del-student="${s.id}">Remove</button></td>
       </tr>`).join('');
     return `
     <div class="card p-5 mb-4">
@@ -450,19 +466,21 @@ function tabSections(){
         <button class="btn btn-danger btn-sm" data-del-section="${sec.id}">Delete Section</button>
       </div>
       <table class="gradebook mb-3">
-        <thead><tr><th>Name</th><th>ID Number</th><th>Password</th><th></th></tr></thead>
-        <tbody>${rows || '<tr><td colspan="4" class="text-[13px]" style="color:var(--ink-soft)">No students yet.</td></tr>'}</tbody>
+        <thead><tr><th>Name</th><th>ID Number</th><th>Email</th><th>Password</th><th></th></tr></thead>
+        <tbody>${rows || '<tr><td colspan="5" class="text-[13px]" style="color:var(--ink-soft)">No students yet.</td></tr>'}</tbody>
       </table>
       <form class="flex flex-wrap gap-2 items-end add-student-form" data-section="${sec.id}">
         <div class="w-40"><label class="text-[11.5px] font-semibold block mb-1">Student Name</label><input type="text" class="stu-name" placeholder="Last, First" required></div>
         <div class="w-36"><label class="text-[11.5px] font-semibold block mb-1">ID Number</label><input type="text" class="stu-id" placeholder="2026-0004" required></div>
+        <div class="w-48"><label class="text-[11.5px] font-semibold block mb-1">Email (optional)</label><input type="text" class="stu-email" placeholder="student@email.com"></div>
         <button type="submit" class="btn btn-primary btn-sm">+ Add Student</button>
       </form>
     </div>`;
   }).join('');
   return `
-  <div class="flex items-center justify-between mb-4">
+  <div class="flex items-center justify-between mb-4 flex-wrap gap-2">
     <h2 class="font-display text-[19px]" style="color:var(--green-900)">Sections & Students</h2>
+    <button id="downloadCredentialsBtn" class="btn btn-gold btn-sm">⬇ Download Login Credentials for Email</button>
   </div>
   ${sectionsHtml || '<p class="text-[13px]" style="color:var(--ink-soft)">No sections yet — add one below.</p>'}
   <div class="card p-5 mb-4">
@@ -474,10 +492,10 @@ function tabSections(){
   </div>
   <div class="card p-5">
     <h3 class="font-display text-[15px] mb-3" style="color:var(--green-900)">Import Students from Excel/CSV</h3>
-    <p class="text-[13px] mb-3" style="color:var(--ink-soft)">Upload a .xlsx or .csv file with two columns: <span class="font-mono">StudentID</span> and <span class="font-mono">Name</span>. Every student in the file is added to the section you pick below. Default password = their Student ID.</p>
-    <table class="gradebook mb-3" style="max-width:360px">
-      <thead><tr><th>StudentID</th><th>Name</th></tr></thead>
-      <tbody><tr><td class="font-mono">2026-0004</td><td>Bautista, Ana</td></tr></tbody>
+    <p class="text-[13px] mb-3" style="color:var(--ink-soft)">Upload a .xlsx or .csv file with columns: <span class="font-mono">StudentID</span>, <span class="font-mono">Name</span>, and optionally <span class="font-mono">Email</span>. Every student in the file is added to the section you pick below. Default password = their Student ID.</p>
+    <table class="gradebook mb-3" style="max-width:480px">
+      <thead><tr><th>StudentID</th><th>Name</th><th>Email</th></tr></thead>
+      <tbody><tr><td class="font-mono">2026-0004</td><td>Bautista, Ana</td><td class="font-mono">ana@email.com</td></tr></tbody>
     </table>
     <button id="downloadStudentTemplateBtn" class="btn btn-ghost btn-sm mb-4">Download CSV Template</button>
     <div class="flex items-center gap-3 flex-wrap">
@@ -496,16 +514,28 @@ function eventsSections(){
     DB.sections.push({id:uid('sec'), name});
     saveDB(); toast('Section added'); render();
   };
+  document.getElementById('downloadCredentialsBtn').onclick = downloadCredentialsForEmail;
   document.querySelectorAll('.add-student-form').forEach(f=>{
     f.onsubmit = (e)=>{
       e.preventDefault();
       const sectionId = f.dataset.section;
       const name = f.querySelector('.stu-name').value.trim();
       const idNumber = f.querySelector('.stu-id').value.trim();
+      const email = f.querySelector('.stu-email').value.trim();
       if(!name || !idNumber) return;
       if(DB.accounts.some(a=>a.idNumber===idNumber && a.role==='student')){ toast('That ID number already exists'); return; }
-      DB.accounts.push({id:uid('acc'), role:'student', idNumber, password:idNumber, name, sectionId});
+      DB.accounts.push({id:uid('acc'), role:'student', idNumber, password:idNumber, name, email, sectionId});
       saveDB(); toast('Student added — default password is their ID number'); render();
+    };
+  });
+  document.querySelectorAll('[data-edit-email]').forEach(b=>{
+    b.onclick = ()=>{
+      const id = b.dataset.editEmail;
+      const acc = DB.accounts.find(a=>a.id===id);
+      const newEmail = prompt(`Set email for ${acc.name}:`, acc.email||'');
+      if(newEmail===null) return;
+      acc.email = newEmail.trim();
+      saveDB(); toast('Email updated'); render();
     };
   });
   document.querySelectorAll('[data-reset-pw]').forEach(b=>{
@@ -544,7 +574,7 @@ function eventsSections(){
   });
   const tmplBtn = document.getElementById('downloadStudentTemplateBtn');
   if(tmplBtn) tmplBtn.onclick = ()=>{
-    const csv = 'StudentID,Name\n2026-0004,Bautista, Ana\n';
+    const csv = 'StudentID,Name,Email\n2026-0004,"Bautista, Ana",ana@email.com\n';
     const blob = new Blob([csv], {type:'text/csv'});
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob); a.download = 'student_import_template.csv'; a.click();
@@ -576,11 +606,12 @@ function parseStudentImportCsv(csvText, sectionId){
   const preview = result.data.map((r,idx)=>{
     const idNumber = (r.StudentID||'').trim();
     const name = (r.Name||'').trim();
+    const email = (r.Email||'').trim();
     let issue = null;
     if(!idNumber) issue = 'Missing StudentID';
     else if(!name) issue = 'Missing Name';
     else if(DB.accounts.some(a=>a.role==='student' && a.idNumber===idNumber)) issue = 'ID Number already exists';
-    return {row:idx+1, idNumber, name, sectionId, issue};
+    return {row:idx+1, idNumber, name, email, sectionId, issue};
   });
   pendingStudentRows = preview;
   renderStudentImportPreview();
@@ -592,7 +623,7 @@ function renderStudentImportPreview(){
   const validCount = pendingStudentRows.filter(r=>!r.issue).length;
   const rowsHtml = pendingStudentRows.map(r=>`
     <tr class="${r.issue?'bg-red-50':''}">
-      <td>${r.row}</td><td class="font-mono">${esc(r.idNumber)}</td><td>${esc(r.name)}</td>
+      <td>${r.row}</td><td class="font-mono">${esc(r.idNumber)}</td><td>${esc(r.name)}</td><td class="font-mono">${esc(r.email)}</td>
       <td class="text-red-600 text-[11.5px]">${r.issue? esc(r.issue):'OK'}</td>
     </tr>`).join('');
   el.innerHTML = `
@@ -603,7 +634,7 @@ function renderStudentImportPreview(){
     </div>
     <div class="overflow-x-auto">
     <table class="gradebook">
-      <thead><tr><th>#</th><th>StudentID</th><th>Name</th><th>Status</th></tr></thead>
+      <thead><tr><th>#</th><th>StudentID</th><th>Name</th><th>Email</th><th>Status</th></tr></thead>
       <tbody>${rowsHtml}</tbody>
     </table>
     </div>
@@ -611,7 +642,7 @@ function renderStudentImportPreview(){
   const btn = document.getElementById('commitStudentImportBtn');
   if(btn) btn.onclick = ()=>{
     pendingStudentRows.filter(r=>!r.issue).forEach(r=>{
-      DB.accounts.push({id:uid('acc'), role:'student', idNumber:r.idNumber, password:r.idNumber, name:r.name, sectionId:r.sectionId});
+      DB.accounts.push({id:uid('acc'), role:'student', idNumber:r.idNumber, password:r.idNumber, name:r.name, email:r.email, sectionId:r.sectionId});
     });
     saveDB();
     pendingStudentRows = null;
