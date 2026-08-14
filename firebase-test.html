@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Firebase Connection Test</title>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<style>
+  body{font-family:Arial,sans-serif;max-width:640px;margin:40px auto;padding:0 20px;line-height:1.6;}
+  h1{font-size:20px;}
+  .step{padding:14px 16px;border-radius:8px;margin-bottom:12px;border:1px solid #ddd;}
+  .pending{background:#f5f5f5;color:#555;}
+  .ok{background:#e6f4ea;color:#1a7431;border-color:#a8d8b6;}
+  .fail{background:#fdecea;color:#a3312a;border-color:#f3b6b1;}
+  code{background:#eee;padding:1px 5px;border-radius:4px;}
+</style>
+</head>
+<body>
+<h1>Firebase Connection Test</h1>
+<p>This page does nothing except try to connect and write one test value. No gradebook, no login, nothing else — just to prove the connection itself works.</p>
+<div id="step1" class="step pending">1. Loading Firebase SDK... </div>
+<div id="step2" class="step pending">2. Signing in anonymously... </div>
+<div id="step3" class="step pending">3. Writing a test document to Firestore... </div>
+<div id="step4" class="step pending">4. Reading it back to confirm... </div>
+<p id="finalMsg"></p>
+
+<script>
+const firebaseConfig = {
+  apiKey: "AIzaSyCHwjVCZfpl4Qg3XhT5lND4tvgHJtIh_CU",
+  authDomain: "psugrade.firebaseapp.com",
+  projectId: "psugrade",
+  storageBucket: "psugrade.firebasestorage.app",
+  messagingSenderId: "975491878813",
+  appId: "1:975491878813:web:57fa5421219c3c28dca974"
+};
+
+function setStep(id, ok, text){
+  const el = document.getElementById(id);
+  el.className = 'step ' + (ok ? 'ok' : 'fail');
+  el.textContent = text;
+}
+
+(async function run(){
+  try{
+    firebase.initializeApp(firebaseConfig);
+    setStep('step1', true, '1. Loading Firebase SDK... OK');
+  }catch(e){
+    setStep('step1', false, '1. Loading Firebase SDK... FAILED: ' + e.message);
+    document.getElementById('finalMsg').textContent = 'Stopped at step 1.';
+    return;
+  }
+
+  try{
+    const cred = await firebase.auth().signInAnonymously();
+    setStep('step2', true, '2. Signing in anonymously... OK (user id: ' + cred.user.uid.slice(0,8) + '...)');
+  }catch(e){
+    setStep('step2', false, '2. Signing in anonymously... FAILED: ' + e.message);
+    document.getElementById('finalMsg').textContent = 'Stopped at step 2.';
+    return;
+  }
+
+  const db = firebase.firestore();
+  const testValue = 'test-' + Date.now();
+  try{
+    await db.collection('connectionTest').doc('ping').set({value: testValue, at: Date.now()});
+    setStep('step3', true, '3. Writing a test document to Firestore... OK');
+  }catch(e){
+    setStep('step3', false, '3. Writing a test document to Firestore... FAILED: ' + e.message);
+    document.getElementById('finalMsg').textContent = 'Stopped at step 3. This is the real error — screenshot this whole page.';
+    return;
+  }
+
+  try{
+    const snap = await db.collection('connectionTest').doc('ping').get();
+    if(snap.exists && snap.data().value === testValue){
+      setStep('step4', true, '4. Reading it back to confirm... OK — value matches!');
+      document.getElementById('finalMsg').innerHTML = '<b style="color:#1a7431">✅ EVERYTHING WORKS. The connection is solid.</b> Go check Firebase console → Firestore → Data tab → you should see a "connectionTest" collection now.';
+    } else {
+      setStep('step4', false, '4. Reading it back to confirm... Got a different value than expected.');
+      document.getElementById('finalMsg').textContent = 'Wrote OK but read-back mismatch — unusual, screenshot this page.';
+    }
+  }catch(e){
+    setStep('step4', false, '4. Reading it back to confirm... FAILED: ' + e.message);
+    document.getElementById('finalMsg').textContent = 'Write worked but read failed. Screenshot this page.';
+  }
+})();
+</script>
+</body>
+</html>
